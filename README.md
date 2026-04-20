@@ -1,200 +1,146 @@
 # QRCode Generator API
 
-API REST para geração de QR Codes a partir de texto, com armazenamento na AWS S3 e containerização via Docker.
+API REST para geração de QR Codes a partir de qualquer texto ou URL, com armazenamento automático na **AWS S3** e execução via Docker em um único comando.
 
 ---
 
-## 🧱 Stack
+## Como funciona
 
-| Tecnologia | Versão | Função |
+```
+Cliente → POST /qrcode { "text": "..." }
+              ↓
+       Spring Boot (porta 8080)
+              ↓
+       ZXing gera QR Code (PNG 200x200)
+              ↓
+       AWS SDK faz upload no S3
+              ↓
+       Retorna { "url": "https://..." }
+```
+
+---
+
+## Stack
+
+| Tecnologia | Versão | Papel |
 |---|---|---|
 | Java | 21 | Linguagem base |
-| Spring Boot | 3.5.13 | Framework web e IoC |
+| Spring Boot | 3.5.13 | Framework web e container IoC |
 | Spring Web | — | Exposição dos endpoints REST |
-| Google ZXing | 3.5.2 | Geração do QR Code |
-| AWS SDK for Java | 2.24.12 | Upload para S3 |
-| Docker | 24+ | Containerização |
+| Google ZXing | 3.5.2 | Geração da matriz do QR Code e renderização PNG |
+| AWS SDK for Java v2 | 2.24.12 | Upload dos arquivos para o bucket S3 |
+| Docker | 24+ | Containerização e execução isolada |
 | Maven | 3.9+ | Build e gerenciamento de dependências |
 
----
+### Por que AWS S3?
 
-## 📋 Pré-requisitos
-
-- Java 17+
-- Maven 3.9+
-- Docker e Docker Compose
-- Conta AWS com bucket S3 criado
-- Credenciais AWS configuradas (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+Os QR Codes gerados são armazenados como objetos no S3 em vez de serem retornados como binário na resposta. Isso permite que a URL pública seja compartilhada, incorporada em e-mails ou impressa — sem depender da disponibilidade desta API. O SDK v2 do AWS é usado com autenticação via variáveis de ambiente, sem nenhuma credencial hardcoded no código.
 
 ---
 
-## ⚙️ Configuração
+## Pré-requisitos
 
-### Variáveis de ambiente
+- Docker e Docker Compose instalados
+- Conta AWS com um **bucket S3 criado** e configurado com leitura pública nos objetos
+- Credenciais AWS com permissão `s3:PutObject` no bucket
 
-Crie um arquivo `.env` na raiz do projeto (nunca commite este arquivo):
+---
+
+## Configuração
+
+Crie um arquivo `.env` na raiz do projeto — ele **nunca deve ser commitado**:
 
 ```env
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_ACCESS_KEY_ID=sua_access_key
+AWS_SECRET_ACCESS_KEY=sua_secret_key
 ```
 
-### application.properties
-
-```properties
-spring.application.name=qrcode.generator
-aws.s3.region=${AWS_REGION}
-aws.s3.bucket.name=${AWS_BUCKET_NAME}
-```
+O arquivo `.env` já está no `.gitignore`. As variáveis `AWS_REGION` (padrão: `us-east-1`) e `AWS_BUCKET_NAME` (padrão: `qrcode`) são definidas no `Dockerfile` e podem ser sobrescritas no `docker-compose.yml` se necessário.
 
 ---
 
-## 🚀 Como executar
- 
-### Com Docker Compose (recomendado)
- 
+## Executando com Docker
+
 ```bash
 docker compose up --build
 ```
- 
+
 A API ficará disponível em `http://localhost:8080`.
- 
-### Localmente com Maven
- 
-```bash
-mvn clean package -DskipTests
-java -jar target/qrcode-generator.jar
-```
 
 ---
 
-## 🔌 Endpoints
- 
-### `POST /api/qrcode`
- 
-Gera um QR Code a partir de um texto e retorna a URL pública do arquivo no S3.
- 
-**Request:**
- 
-```http
-POST /api/qrcode
-Content-Type: application/json
- 
-{
-  "text": "https://exemplo.com"
-}
-```
- 
-**Response `201 Created`:**
- 
+## Testando com Insomnia
+
+### Configuração da requisição
+
+| Campo | Valor |
+|---|---|
+| Método | `POST` |
+| URL | `http://localhost:8080/qrcode` |
+| Content-Type | `application/json` |
+
+### Body da requisição
+
 ```json
 {
-  "url": "https://your-bucket.s3.amazonaws.com/qrcodes/a1b2c3d4.png",
-  "text": "https://exemplo.com",
-  "createdAt": "2025-04-14T10:30:00Z"
+  "text": "https://github.com/seu-usuario"
 }
 ```
- 
-**Response `400 Bad Request`** — quando o campo `text` está vazio ou nulo:
- 
+
+O campo `text` aceita qualquer string — URL, texto livre, dados estruturados, etc.
+
+### Resposta de sucesso — `200 OK`
+
 ```json
 {
-  "error": "O campo 'text' é obrigatório e não pode estar vazio."
+  "url": "https://qrcode.s3.us-east-1.amazonaws.com/f47ac10b-58cc-4372-a567-0e02b2c3d479"
 }
 ```
+
+A URL retornada aponta diretamente para o arquivo PNG no S3 e pode ser aberta em qualquer navegador.
+
+### Resposta de erro — `500 Internal Server Error`
+
+Retornado quando ocorre falha na geração do QR Code ou no upload ao S3 (ex: credenciais inválidas, bucket inexistente).
 
 ---
 
-## 🏗️ Estrutura do projeto
+## Estrutura do projeto
 
 ```
 src/
 └── main/
     └── java/com/rechcosta/qrcode/generator/
         ├── controller/
-        │   └── QrCodeController.java          # Camada de entrada REST
+        │   └── QrCodeController.java           # Recebe POST /qrcode e delega ao service
         ├── dto/
-        │   ├── QrCodeGenerateRequest.java      # Payload da requisição
-        │   └── QrCodeGenerateResponse.java     # Payload da resposta
-        ├── infrastructure/
-        │   └── ports/
-        │       └── S3StorageAdapter.java       # Implementação do upload S3
+        │   ├── QrCodeGenerateRequest.java       # { "text": "..." }
+        │   └── QrCodeGenerateResponse.java      # { "url": "..." }
         ├── ports/
-        │   └── StoragePort.java               # Interface de abstração do storage
+        │   └── StoragePort.java                # Interface de abstração do storage
+        ├── infrastructure/
+        │   └── S3StorageAdapter.java           # Implementação concreta: upload para AWS S3
         ├── service/
-        │   └── QrCodeGeneratorService.java    # Orquestração da lógica de negócio
-        └── Application.java                   # Entry point Spring Boot
+        │   └── QrCodeGeneratorService.java     # Orquestra geração (ZXing) + upload (StoragePort)
+        └── Application.java                    # Entry point Spring Boot
 Dockerfile
 docker-compose.yml
+.env                                            # Credenciais AWS (não commitado)
 ```
+
+A `StoragePort` isola o serviço da implementação concreta de storage — trocar de S3 para outro provider exige apenas uma nova implementação da interface, sem tocar no serviço.
 
 ---
 
-## 🐳 Docker
+## Segurança
 
-### Dockerfile
-
-```dockerfile
-FROM maven:3.9.6-eclipse-temurin-21 AS build
-WORKDIR /app
-COPY pom.xml .
-COPY src ./src
-RUN mvn clean package -DskipTests
-
-FROM eclipse-temurin:21-jre
-WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
-
-ARG AWS_ACESS_KEY_ID
-ARG AWS_SECRET_ACESS_KEY
-
-ENV AWS_REGION=us-east-1
-ENV AWS_BUCKET_NAME=qrcode
-
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
-
-### docker-compose.yml
-
-```yaml
-services:
-  app:
-    build: .
-    ports:
-      - "8080:8080"
-    env_file:
-      - .env
-```
+- Credenciais AWS **nunca** são hardcoded; sempre injetadas via variáveis de ambiente
+- O arquivo `.env` está no `.gitignore`
+- O bucket S3 deve ter política de **leitura pública apenas para leitura de objetos** — escrita pública deve estar desabilitada
+- O acesso de escrita é feito exclusivamente via credenciais IAM com permissão mínima (`s3:PutObject`)
 
 ---
 
-## 🔐 Segurança
+## Licença
 
-- As credenciais AWS **nunca** são hardcoded; são sempre injetadas via variáveis de ambiente.
-- O arquivo `.env` está listado no `.gitignore`.
-- O bucket S3 deve ter política de acesso público apenas para leitura dos objetos gerados, nunca escrita pública.
-
----
-
-## 📦 Dependências principais (pom.xml)
-
-```xml
-<!-- ZXing -->
-<dependency>
-    <groupId>com.google.zxing</groupId>
-    <artifactId>core</artifactId>
-    <version>3.5.2</version>
-</dependency>
-<dependency>
-    <groupId>com.google.zxing</groupId>
-    <artifactId>javase</artifactId>
-    <version>3.5.2</version>
-</dependency>
-
-<!-- AWS SDK S3 -->
-<dependency>
-    <groupId>software.amazon.awssdk</groupId>
-    <artifactId>s3</artifactId>
-    <version>2.24.12</version>
-</dependency>
-```
+MIT — veja [LICENSE](./LICENSE)
