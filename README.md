@@ -1,95 +1,95 @@
 # QRCode Generator API
 
-API REST para geração de QR Codes a partir de qualquer texto ou URL, com armazenamento automático na **AWS S3** e execução via Docker em um único comando.
+REST API for generating QR Codes from any text or URL, with automatic storage on **AWS S3** and Docker-based execution in a single command.
 
 ---
 
-## Como funciona
+## How it works
 
 ```
-Cliente → POST /qrcode { "text": "..." }
+Client → POST /qrcode { "text": "..." }
               ↓
-       Spring Boot (porta 8080)
+       Spring Boot (port 8080)
               ↓
-       ZXing gera QR Code (PNG 200x200)
+       ZXing generates QR Code (PNG 200x200)
               ↓
-       AWS SDK faz upload no S3
+       AWS SDK uploads to S3
               ↓
-       Retorna { "url": "https://..." }
+       Returns { "url": "https://..." }
 ```
 
 ---
 
 ## Stack
 
-| Tecnologia | Versão | Papel |
+| Technology | Version | Role |
 |---|---|---|
-| Java | 21 | Linguagem base |
-| Spring Boot | 3.5.13 | Framework web e container IoC |
-| Spring Web | — | Exposição dos endpoints REST |
-| Google ZXing | 3.5.2 | Geração da matriz do QR Code e renderização PNG |
-| AWS SDK for Java v2 | 2.24.12 | Upload dos arquivos para o bucket S3 |
-| Docker | 24+ | Containerização e execução isolada |
-| Maven | 3.9+ | Build e gerenciamento de dependências |
+| Java | 21 | Base language |
+| Spring Boot | 3.5.13 | Web framework and IoC container |
+| Spring Web | — | REST endpoint exposure |
+| Google ZXing | 3.5.2 | QR Code matrix generation and PNG rendering |
+| AWS SDK for Java v2 | 2.24.12 | File upload to S3 bucket |
+| Docker | 24+ | Containerization and isolated execution |
+| Maven | 3.9+ | Build and dependency management |
 
-### Por que AWS S3?
+### Why AWS S3?
 
-Os QR Codes gerados são armazenados como objetos no S3 em vez de serem retornados como binário na resposta. Isso permite que a URL pública seja compartilhada, incorporada em e-mails ou impressa — sem depender da disponibilidade desta API. O SDK v2 do AWS é usado com autenticação via variáveis de ambiente, sem nenhuma credencial hardcoded no código.
-
----
-
-## Pré-requisitos
-
-- Docker e Docker Compose instalados
-- Conta AWS com um **bucket S3 criado** e configurado com leitura pública nos objetos
-- Credenciais AWS com permissão `s3:PutObject` no bucket
+The generated QR Codes are stored as objects on S3 instead of being returned as binary in the response. This allows the public URL to be shared, embedded in emails, or printed — without depending on this API's availability. The AWS SDK v2 is used with environment-variable-based authentication, with no credentials hardcoded in the source.
 
 ---
 
-## Configuração
+## Prerequisites
 
-Crie um arquivo `.env` na raiz do projeto — ele **nunca deve ser commitado**:
+- Docker and Docker Compose installed
+- AWS account with an **S3 bucket created** and configured for public read access on objects
+- AWS credentials with `s3:PutObject` permission on the bucket
+
+---
+
+## Configuration
+
+Create a `.env` file at the project root — it **must never be committed**:
 
 ```env
-AWS_ACCESS_KEY_ID=sua_access_key
-AWS_SECRET_ACCESS_KEY=sua_secret_key
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
 ```
 
-O arquivo `.env` já está no `.gitignore`. As variáveis `AWS_REGION` (padrão: `us-east-1`) e `AWS_BUCKET_NAME` (padrão: `qrcode`) são definidas no `Dockerfile` e podem ser sobrescritas no `docker-compose.yml` se necessário.
+The `.env` file is already listed in `.gitignore`. The `AWS_REGION` (default: `us-east-1`) and `AWS_BUCKET_NAME` (default: `qrcode`) variables are defined in the `Dockerfile` and can be overridden in `docker-compose.yml` when needed.
 
 ---
 
-## Executando com Docker
+## Running with Docker
 
 ```bash
 docker compose up --build
 ```
 
-A API ficará disponível em `http://localhost:8080`.
+The API will be available at `http://localhost:8080`.
 
 ---
 
-## Testando com Insomnia
+## Testing with Insomnia
 
-### Configuração da requisição
+### Request configuration
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| Método | `POST` |
+| Method | `POST` |
 | URL | `http://localhost:8080/qrcode` |
 | Content-Type | `application/json` |
 
-### Body da requisição
+### Request body
 
 ```json
 {
-  "text": "https://github.com/seu-usuario"
+  "text": "https://github.com/your-username"
 }
 ```
 
-O campo `text` aceita qualquer string — URL, texto livre, dados estruturados, etc.
+The `text` field accepts any string — URL, free text, structured data, etc.
 
-### Resposta de sucesso — `200 OK`
+### Success response — `200 OK`
 
 ```json
 {
@@ -97,50 +97,50 @@ O campo `text` aceita qualquer string — URL, texto livre, dados estruturados, 
 }
 ```
 
-A URL retornada aponta diretamente para o arquivo PNG no S3 e pode ser aberta em qualquer navegador.
+The returned URL points directly to the PNG file on S3 and can be opened in any browser.
 
-### Resposta de erro — `500 Internal Server Error`
+### Error response — `500 Internal Server Error`
 
-Retornado quando ocorre falha na geração do QR Code ou no upload ao S3 (ex: credenciais inválidas, bucket inexistente).
+Returned when QR Code generation or S3 upload fails (e.g., invalid credentials, non-existent bucket).
 
 ---
 
-## Estrutura do projeto
+## Project structure
 
 ```
 src/
 └── main/
     └── java/com/rechcosta/qrcode/generator/
         ├── controller/
-        │   └── QrCodeController.java           # Recebe POST /qrcode e delega ao service
+        │   └── QrCodeController.java           # Receives POST /qrcode and delegates to the service
         ├── dto/
         │   ├── QrCodeGenerateRequest.java       # { "text": "..." }
         │   └── QrCodeGenerateResponse.java      # { "url": "..." }
         ├── ports/
-        │   └── StoragePort.java                # Interface de abstração do storage
+        │   └── StoragePort.java                # Storage abstraction interface
         ├── infrastructure/
-        │   └── S3StorageAdapter.java           # Implementação concreta: upload para AWS S3
+        │   └── S3StorageAdapter.java           # Concrete implementation: upload to AWS S3
         ├── service/
-        │   └── QrCodeGeneratorService.java     # Orquestra geração (ZXing) + upload (StoragePort)
-        └── Application.java                    # Entry point Spring Boot
+        │   └── QrCodeGeneratorService.java     # Orchestrates generation (ZXing) + upload (StoragePort)
+        └── Application.java                    # Spring Boot entry point
 Dockerfile
 docker-compose.yml
-.env                                            # Credenciais AWS (não commitado)
+.env                                            # AWS credentials (not committed)
 ```
 
-A `StoragePort` isola o serviço da implementação concreta de storage — trocar de S3 para outro provider exige apenas uma nova implementação da interface, sem tocar no serviço.
+The `StoragePort` interface isolates the service from the concrete storage implementation — swapping S3 for another provider only requires a new implementation of the interface, with no changes to the service.
 
 ---
 
-## Segurança
+## Security
 
-- Credenciais AWS **nunca** são hardcoded; sempre injetadas via variáveis de ambiente
-- O arquivo `.env` está no `.gitignore`
-- O bucket S3 deve ter política de **leitura pública apenas para leitura de objetos** — escrita pública deve estar desabilitada
-- O acesso de escrita é feito exclusivamente via credenciais IAM com permissão mínima (`s3:PutObject`)
+- AWS credentials are **never** hardcoded; always injected via environment variables
+- The `.env` file is listed in `.gitignore`
+- The S3 bucket must be configured with **public read access for objects only** — public write must remain disabled
+- Write access is performed exclusively through IAM credentials with minimal permissions (`s3:PutObject`)
 
 ---
 
-## Licença
+## License
 
-MIT — veja [LICENSE](./LICENSE)
+MIT — see [LICENSE](./LICENSE)
